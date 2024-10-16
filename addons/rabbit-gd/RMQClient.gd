@@ -64,7 +64,7 @@ func open_tls(
 ) -> Error:
 	_connection = StreamPeerTLS.new()
 	#_connection.big_endian = true
-	var tcp = StreamPeerTCP.new()
+	var tcp := StreamPeerTCP.new()
 	#tcp.big_endian = true
 	var tcp_connect_err := tcp.connect_to_host(host, port)
 	if tcp_connect_err != OK:
@@ -80,7 +80,7 @@ func open_tls(
 	if tcp.get_status() != StreamPeerTCP.Status.STATUS_CONNECTED:
 		print("[rabbitmq] TCP Connection error status: ", _connection.get_status())
 		return ERR_CONNECTION_ERROR
-
+	
 	var tls_connect_err : Error = _connection.connect_to_stream(tcp, common_name, tls_options)
 	if tls_connect_err != OK:
 		print("[rabbitmq] Failed to tls connect to ",host,":",port, " got error code ", tls_connect_err)
@@ -91,14 +91,12 @@ func open_tls(
 	if _connection.get_status() != StreamPeerTLS.Status.STATUS_CONNECTED:
 		print("[rabbitmq] TLS Connection error status: ", _connection.get_status())
 		return ERR_CONNECTION_ERROR
-	print("status is ", _connection.get_status())
 	_start_receiving()
 	_start_parsing()
 	var handshake_err = await _connect_rabbitmq(username,password,virtual_host)
 	if handshake_err != OK:
 		return handshake_err
 	print("[rabbitmq] Connected to ",host,":",port)
-	return OK
 	return OK
 
 # internal function, announces protocol and performs rmq handshake
@@ -119,18 +117,28 @@ func _connect_rabbitmq(username:String,password:String,virtual_host:String):
 func _start_receiving():
 	while true:
 		_connection.poll()
-		if _connection.get_status() != 2: # 2 means CONNECTED in both streampeerTLS and  streampeerTCP
+		if _connection.get_status() != 2: # 2 means CONNECTED in both StreamPeerTLS and StreamPeerTCP
+			print("[rabbitmq] client disconnected, got status ", _connection.get_status())
 			return
 		var available_bytes = _connection.get_available_bytes()
-		var pdata := _connection.get_partial_data(available_bytes)
-		var error = pdata[0]
-		if error != OK:
-			print("[rabbitmq] error ticking: ", error)
-			close()
-			return
-		var data = pdata[1]
-		if not data.is_empty():
+		while available_bytes > 0:
+			var pdata := _connection.get_partial_data(available_bytes)
+			var error = pdata[0]
+			if error != OK:
+				print("[rabbitmq] error ticking: ", error)
+				close()
+				return
+			var data : PackedByteArray = pdata[1]
 			_on_inbound_data.emit(data)
+			
+			# in case get_partial_data returned less than expected
+			available_bytes -= data.size()
+			if available_bytes > 0:
+				_connection.poll()
+				if _connection.get_status() != 2: # 2 means CONNECTED in both StreamPeerTLS and StreamPeerTCP
+					print("[rabbitmq] client disconnected, got status ", _connection.get_status())
+					return
+				await _tick_signal
 		await _tick_signal
 
 # internal coroutine continuosly waiting for inbound data and parsing it into frames, delegating these frames to the respective consumers.
