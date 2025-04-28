@@ -71,7 +71,7 @@ static func forward(remaining_bytes_0:PackedByteArray,signal_data, on_error: Cal
 			if visitor: visitor.visit_long_long_int(parse_result.data)
 		'l': # long long uint
 			parse_result = await RMQParserU64.forward(remaining_bytes,signal_data,on_error)
-			if visitor: visitor.long_long_uint(parse_result.data)
+			if visitor: visitor.visit_long_long_uint(parse_result.data)
 		'f': # float
 			parse_result = await RMQParserFloat.forward(remaining_bytes,signal_data,on_error)
 			if visitor: visitor.visit_float(parse_result.data)
